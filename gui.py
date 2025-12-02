@@ -81,6 +81,7 @@ class MinesweeperUI(tk.Tk):
         self.cols_var = tk.IntVar(value=16)
         self.mines_var = tk.IntVar(value=40)
         self.mines_left_var = tk.StringVar(value="Mines left: -")
+        self.last_solver_message: str = ""
 
         self._build_controls()
         self._build_canvas()
@@ -145,6 +146,7 @@ class MinesweeperUI(tk.Tk):
         self.board = Board(rows=rows, cols=cols, num_mines=mines)
         self._resize_canvas()
         self._update_mines_left()
+        self.last_solver_message = ""
         self.draw_board()
         self._game_over_shown = False
 
@@ -157,9 +159,12 @@ class MinesweeperUI(tk.Tk):
         if not self.board.mines_placed:
             self.board.open_cell(self.board.rows // 2, self.board.cols // 2)
 
+        solver_message = "CSP solver has been used"
         moves = self.csp_solver.play_step(self.board)
         if not moves and not self.board.game_over:
+            solver_message = "Probability_Solver has been used"
             self.prob_solver.play_step(self.board)
+        self.last_solver_message = solver_message
 
         if self.board.game_over and not self.board.win:
             self.board.reveal_all_mines()
@@ -259,6 +264,17 @@ class MinesweeperUI(tk.Tk):
                             fill=NUMBER_COLORS.get(num, "black"),
                             font=("Arial", 12, "bold"),
                         )
+
+        if self.last_solver_message:
+            # Small overlay in the bottom-left corner indicating which solver acted last.
+            self.canvas.create_text(
+                BOARD_BORDER + 6,
+                h - BOARD_BORDER - 6,
+                text=self.last_solver_message,
+                fill="white",
+                anchor="sw",
+                font=("Arial", 9, "bold"),
+            )
 
     # Helpers
     def _coords_from_event(self, event) -> tuple[int | None, int | None]:
