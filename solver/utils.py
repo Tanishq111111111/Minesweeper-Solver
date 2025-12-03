@@ -249,3 +249,28 @@ def global_mine_density(board: Board) -> float:
     rem_mines = remaining_mines(board)
     rem_mines = max(0, rem_mines)
     return rem_mines / len(cells)
+
+def constraint_components(constraints: list[Constraint]) -> list[list[Constraint]]:
+    graph: dict[int, set[int]] = {i: set() for i in range(len(constraints))}
+    for i, ci in enumerate(constraints):
+        set_i = set(ci.unknown)
+        for j in range(i + 1, len(constraints)):
+            if set_i.intersection(constraints[j].unknown):
+                graph[i].add(j)
+                graph[j].add(i)
+
+    comps: list[list[int]] = []
+    seen: set[int] = set()
+    for i in range(len(constraints)):
+        if i in seen:
+            continue
+        stack = [i]; seen.add(i); comp = []
+        while stack:
+            node = stack.pop()
+            comp.append(node)
+            for nei in graph[node]:
+                if nei not in seen:
+                    seen.add(nei); stack.append(nei)
+        comps.append(comp)
+    return [[constraints[i] for i in comp] for comp in comps]
+

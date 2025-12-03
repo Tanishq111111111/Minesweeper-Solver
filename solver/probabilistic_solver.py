@@ -1,19 +1,61 @@
 # solver/probabilistic_solver.py
 from __future__ import annotations
+from itertools import combinations
 
 import math
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 
-from board import Board, CellState
+from board import Board
 from .utils import (
     BaseSolver,
     Move,
     basic_logical_moves,
     build_constraints,
-    remaining_mines,
     unopened_cells,
     global_mine_density,
+    constraint_components,
+    Constraint,
 )
+
+
+MAX_ENUM_UNKNOWNS = 15
+
+
+def exact_component_probs(component: list[Constraint]) -> Optional[dict[tuple[int, int], float]]:
+    """Enumerate exact mine probabilities for a small constraint component."""
+    unknowns = sorted({coord for c in component for coord in c.unknown})
+    if len(unknowns) > MAX_ENUM_UNKNOWNS:
+        return None
+
+    idx = {coord: i for i, coord in enumerate(unknowns)}
+    counts = {coord: 0 for coord in unknowns}
+    total = 0
+
+    # brute force assignments that satisfy all constraints
+    for mines_count in range(len(unknowns) + 1):
+        for mine_indices in combinations(range(len(unknowns)), mines_count):
+            assignment = [False] * len(unknowns)
+            for k in mine_indices:
+                assignment[k] = True
+
+            valid = True
+            for c in component:
+                mines = sum(assignment[idx[u]] for u in c.unknown) + c.flagged
+                if mines != c.clue:
+                    valid = False
+                    break
+
+            if not valid:
+                continue
+
+            total += 1
+            for coord in unknowns:
+                if assignment[idx[coord]]:
+                    counts[coord] += 1
+
+    if total == 0:
+        return None
+    return {coord: counts[coord] / total for coord in unknowns}
 
 
 class ProbabilisticSolver(BaseSolver):
@@ -56,47 +98,45 @@ class ProbabilisticSolver(BaseSolver):
         if not unopened:
             return []
 
-        # Build local probability estimates from constraints
+        # Build constraints and split into connected components
         constraints = build_constraints(board)
-        local_probs: Dict[Tuple[int, int], List[float]] = {}
+        comps = constraint_components(constraints)
 
-        for c in constraints:
-            remaining = c.clue - c.flagged
-            if remaining < 0 or remaining > len(c.unknown) or not c.unknown:
-                continue
+        # Per-cell probability estimates from exact/MC per component
+        comp_probs: Dict[Tuple[int, int], float] = {}
+        for comp in comps:
+            exact = exact_component_probs(comp)
+            if exact:
+                comp_probs.update(exact)
 
-            p_local = remaining / len(c.unknown)
-            for coord in c.unknown:
-                local_probs.setdefault(coord, []).append(p_local)
-
-        # Baseline probability for unknown cells with no local info
+        # Baseline probability for cells with no component info
         base_p = global_mine_density(board)
 
-        # Combine probabilities per cell
+        frontier_cells = {coord for comp in comps for c in comp for coord in c.unknown}
         cell_prob: Dict[Tuple[int, int], float] = {}
 
         for cell in unopened:
             coord = (cell.row, cell.col)
-            probs = local_probs.get(coord)
-
-            if probs:
-                # Take the maximum local estimate (pessimistic approach)
-                p = max(probs)
+            if coord in comp_probs:
+                p = comp_probs[coord]
             else:
                 p = base_p
-
-            # Clamp to [0, 1] for sanity
-            p = max(0.0, min(1.0, p))
-            cell_prob[coord] = p
+            cell_prob[coord] = max(0.0, min(1.0, p))  # clamp
 
         if not cell_prob:
             return []
 
         # Choose cell with minimum probability
         min_p = min(cell_prob.values())
-        best_coords = [coord for coord, p in cell_prob.items() if math.isclose(p, min_p, rel_tol=1e-9) or p == min_p]
+        candidates = [coord for coord, p in cell_prob.items() if math.isclose(p, min_p, rel_tol=1e-9) or p == min_p]
 
-        # Random tiebreaker among best candidates
-        chosen_r, chosen_c = self.rng.choice(best_coords)
+        # Risk gate: if everything is risky, prefer cells outside the frontier when possible
+        RISK_GATE = 0.25
+        if min_p > RISK_GATE:
+            outside = [coord for coord in candidates if coord not in frontier_cells]
+            if outside:
+                candidates = outside
 
+        chosen_r, chosen_c = self.rng.choice(candidates)
         return [Move("open", chosen_r, chosen_c)]
+
