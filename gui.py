@@ -82,6 +82,7 @@ class MinesweeperUI(tk.Tk):
         self.mines_var = tk.IntVar(value=40)
         self.mines_left_var = tk.StringVar(value="Mines left: -")
         self.last_solver_message: str = ""
+        self.last_move: tuple[int, int] | None = None
 
         self._build_controls()
         self._build_canvas()
@@ -146,6 +147,7 @@ class MinesweeperUI(tk.Tk):
         self.board = Board(rows=rows, cols=cols, num_mines=mines)
         self._resize_canvas()
         self._update_mines_left()
+        self.last_move = None
         self.last_solver_message = ""
         self.draw_board()
         self._game_over_shown = False
@@ -157,14 +159,18 @@ class MinesweeperUI(tk.Tk):
             return
         # If nothing is open yet, open center to seed the board safely.
         if not self.board.mines_placed:
-            self.board.open_cell(self.board.rows // 2, self.board.cols // 2)
+            center = (self.board.rows // 2, self.board.cols // 2)
+            self.board.open_cell(*center)
+            self.last_move = center
 
         solver_message = "CSP solver has been used"
         moves = self.csp_solver.play_step(self.board)
         if not moves and not self.board.game_over:
             solver_message = "Probability_Solver has been used"
-            self.prob_solver.play_step(self.board)
+            moves = self.prob_solver.play_step(self.board)
         self.last_solver_message = solver_message
+        if moves:
+            self.last_move = (moves[0].row, moves[0].col)
 
         if self.board.game_over and not self.board.win:
             self.board.reveal_all_mines()
@@ -194,6 +200,7 @@ class MinesweeperUI(tk.Tk):
                     self.board.reveal_all_mines()
             else:
                 self.board.flag_cell(row, col)
+            self.last_move = (row, col)
         except IndexError:
             return
 
@@ -264,6 +271,23 @@ class MinesweeperUI(tk.Tk):
                             fill=NUMBER_COLORS.get(num, "black"),
                             font=("Arial", 12, "bold"),
                         )
+
+        if self.last_move:
+            mr, mc = self.last_move
+            if 0 <= mr < rows and 0 <= mc < cols:
+                x0 = BOARD_BORDER + mc * CELL_SIZE
+                y0 = BOARD_BORDER + mr * CELL_SIZE
+                x1 = x0 + CELL_SIZE
+                y1 = y0 + CELL_SIZE
+                # Highlight rectangle around the last acted-on cell
+                self.canvas.create_rectangle(
+                    x0 + 1,
+                    y0 + 1,
+                    x1 - 1,
+                    y1 - 1,
+                    outline="#f6c343",
+                    width=2,
+                )
 
         if self.last_solver_message:
             # Small overlay in the bottom-left corner indicating which solver acted last.
