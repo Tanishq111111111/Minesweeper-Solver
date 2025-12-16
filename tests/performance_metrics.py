@@ -64,8 +64,8 @@ def run_suite(configs: list[RunConfig], base_seed: int = 12345) -> None:
 
 if __name__ == "__main__":
     configs = [
-        RunConfig(rows=9, cols=9, mines=10, games=10, name="Beginner"),
-        RunConfig(rows=16, cols=16, mines=40, games=10, name="Intermediate"),
-        RunConfig(rows=16, cols=30, mines=99, games=10, name="Expert"),
+        RunConfig(rows=9, cols=9, mines=10, games=200, name="Beginner"),
+        RunConfig(rows=16, cols=16, mines=40, games=200, name="Intermediate"),
+        RunConfig(rows=16, cols=30, mines=99, games=200, name="Expert"),
     ]
     run_suite(configs)
